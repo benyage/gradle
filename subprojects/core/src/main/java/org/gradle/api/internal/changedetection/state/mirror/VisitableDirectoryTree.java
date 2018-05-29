@@ -16,16 +16,6 @@
 
 package org.gradle.api.internal.changedetection.state.mirror;
 
-import javax.annotation.Nullable;
-import java.util.Deque;
-
-public interface PhysicalSnapshot {
-    @Nullable
-    PhysicalSnapshot find(String[] segments, int offset);
-    String getName();
-    PhysicalSnapshot add(String[] segments, int offset, PhysicalSnapshot snapshot);
-
-    void visit(PhysicalFileVisitor visitor, String basePath, Deque<String> relativePath);
-
-    void visitSelf(PhysicalFileVisitor visitor, String basePath, Iterable<String> relativePath);
+public interface VisitableDirectoryTree {
+    void visit(PhysicalFileVisitor visitor);
 }

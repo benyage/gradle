@@ -16,6 +16,9 @@
 
 package org.gradle.api.internal.changedetection.state.mirror;
 
+import org.gradle.api.internal.changedetection.state.MissingFileContentSnapshot;
+
+import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -64,5 +67,15 @@ public class PhysicalMissingFileSnapshot implements PhysicalSnapshot {
             }
         }
         return child.add(segments, offset + 1, snapshot);
+    }
+
+    @Override
+    public void visit(PhysicalFileVisitor visitor, String basePath, Deque<String> relativePath) {
+        throw new UnsupportedOperationException("Cannot visit missing file");
+    }
+
+    @Override
+    public void visitSelf(PhysicalFileVisitor visitor, String basePath, Iterable<String> relativePath) {
+        visitor.visit(basePath, name, relativePath, MissingFileContentSnapshot.INSTANCE);
     }
 }

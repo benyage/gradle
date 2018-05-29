@@ -16,9 +16,12 @@
 
 package org.gradle.api.internal.changedetection.state;
 
-import org.gradle.api.file.RelativePath;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import org.gradle.api.internal.changedetection.state.mirror.FileSnapshotHelper;
 import org.gradle.api.internal.changedetection.state.mirror.PhysicalDirectorySnapshot;
 import org.gradle.api.internal.changedetection.state.mirror.PhysicalFileSnapshot;
+import org.gradle.api.internal.changedetection.state.mirror.PhysicalFileVisitor;
 import org.gradle.api.internal.changedetection.state.mirror.PhysicalMissingFileSnapshot;
 import org.gradle.api.internal.changedetection.state.mirror.PhysicalSnapshot;
 import org.gradle.api.internal.changedetection.state.mirror.PhysicalSnapshotRoot;
@@ -44,6 +47,7 @@ public class DefaultFileSystemMirror implements FileSystemMirror, TaskOutputChan
     private final Map<String, Snapshot> cacheSnapshots = new ConcurrentHashMap<String, Snapshot>();
     private final WellKnownFileLocations wellKnownFileLocations;
     private final PhysicalSnapshotRoot root = new PhysicalSnapshotRoot();
+    private final PhysicalSnapshotRoot cachedRoot = new PhysicalSnapshotRoot();
 
     public DefaultFileSystemMirror(WellKnownFileLocations wellKnownFileLocations) {
         this.wellKnownFileLocations = wellKnownFileLocations;
@@ -51,7 +55,7 @@ public class DefaultFileSystemMirror implements FileSystemMirror, TaskOutputChan
 
     @Nullable
     @Override
-    public FileSnapshot getFile(String path) {
+    public FileSnapshot getFile(final String path) {
         // Could potentially also look whether we have the details for an ancestor directory tree
         // Could possibly infer that the path refers to a directory, if we have details for a descendant path (and it's not a missing file)
         if (wellKnownFileLocations.isImmutable(path)) {
@@ -61,42 +65,37 @@ public class DefaultFileSystemMirror implements FileSystemMirror, TaskOutputChan
             if (physicalSnapshot == null) {
                 return null;
             }
-            if (physicalSnapshot instanceof PhysicalDirectorySnapshot) {
-                return new DirectoryFileSnapshot(path, new RelativePath(false, physicalSnapshot.getName()), true);
-            }
-            if (physicalSnapshot instanceof PhysicalFileSnapshot) {
-                PhysicalFileSnapshot file = (PhysicalFileSnapshot) physicalSnapshot;
-                return new RegularFileSnapshot(path, new RelativePath(true, file.getName()), true, new FileHashSnapshot(file.getHash(), file.getTimestamp()));
-            }
-            if (physicalSnapshot instanceof PhysicalMissingFileSnapshot) {
-                return new MissingFileSnapshot(path, new RelativePath(true, physicalSnapshot.getName()));
-            }
-            throw new IllegalStateException("Only files, dirs and missing files are possible");
+            SinglePhysicalFileVisitor visitor = new SinglePhysicalFileVisitor();
+            physicalSnapshot.visitSelf(visitor, path, ImmutableList.<String>of());
+            return visitor.getFileSnapshot();
         }
     }
 
     @Override
     public void putFile(FileSnapshot file) {
-        if (wellKnownFileLocations.isImmutable(file.getPath())) {
-            cacheFiles.put(file.getPath(), file);
-        } else {
-            PhysicalSnapshot snapshot;
-            switch (file.getType()) {
-                case Directory:
-                    snapshot = new PhysicalDirectorySnapshot(file.getName());
-                    break;
-                case Missing:
-                    snapshot = new PhysicalMissingFileSnapshot(file.getName());
-                    break;
-                case RegularFile:
-                    FileHashSnapshot content = (FileHashSnapshot) file.getContent();
-                    snapshot = new PhysicalFileSnapshot(file.getName(), content.getLastModified(),  content.getContentMd5());
-                    break;
-                default:
-                    throw new IllegalStateException("Unknown file type");
-            }
-            root.add(file.getPath(), snapshot);
+        PhysicalSnapshot snapshot;
+        switch (file.getType()) {
+            case Directory:
+                snapshot = new PhysicalDirectorySnapshot(file.getName());
+                break;
+            case Missing:
+                snapshot = new PhysicalMissingFileSnapshot(file.getName());
+                break;
+            case RegularFile:
+                FileHashSnapshot content = (FileHashSnapshot) file.getContent();
+                snapshot = new PhysicalFileSnapshot(file.getName(), content.getLastModified(), content.getContentMd5());
+                break;
+            default:
+                throw new IllegalStateException("Unknown file type");
         }
+        getRoot(file.getPath()).add(file.getPath(), snapshot);
+    }
+
+    private PhysicalSnapshotRoot getRoot(String path) {
+        if (wellKnownFileLocations.isImmutable(path)) {
+            return cachedRoot;
+        }
+        return root;
     }
 
     @Nullable
@@ -156,10 +155,25 @@ public class DefaultFileSystemMirror implements FileSystemMirror, TaskOutputChan
     public void beforeComplete() {
         // We throw away all state between builds
         root.clear();
+        cachedRoot.clear();
         cacheFiles.clear();
         trees.clear();
         cacheTrees.clear();
         snapshots.clear();
         cacheSnapshots.clear();
+    }
+
+    private static class SinglePhysicalFileVisitor implements PhysicalFileVisitor {
+        private FileSnapshot fileSnapshot;
+
+        public FileSnapshot getFileSnapshot() {
+            return fileSnapshot;
+        }
+
+        @Override
+        public void visit(String basePath, String name, Iterable<String> relativePath, FileContentSnapshot content) {
+            Preconditions.checkState(fileSnapshot == null, "Can only visit one snapshot");
+            fileSnapshot = FileSnapshotHelper.create(basePath, ImmutableList.of(name), content);
+        }
     }
 }

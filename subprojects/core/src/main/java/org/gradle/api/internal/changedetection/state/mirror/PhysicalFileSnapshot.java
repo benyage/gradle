@@ -16,7 +16,10 @@
 
 package org.gradle.api.internal.changedetection.state.mirror;
 
+import org.gradle.api.internal.changedetection.state.FileHashSnapshot;
 import org.gradle.internal.hash.HashCode;
+
+import java.util.Deque;
 
 public class PhysicalFileSnapshot implements PhysicalSnapshot {
     private final HashCode hash;
@@ -50,11 +53,25 @@ public class PhysicalFileSnapshot implements PhysicalSnapshot {
         throw new UnsupportedOperationException("Cannot add children of file");
     }
 
+    @Override
+    public void visit(PhysicalFileVisitor visitor, String basePath, Deque<String> relativePath) {
+        visitSelf(visitor, basePath, relativePath);
+    }
+
+    @Override
+    public void visitSelf(PhysicalFileVisitor visitor, String basePath, Iterable<String> relativePath) {
+        visitor.visit(basePath, name, relativePath, getContent());
+    }
+
     public HashCode getHash() {
         return hash;
     }
 
     public long getTimestamp() {
         return timestamp;
+    }
+
+    public FileHashSnapshot getContent() {
+        return new FileHashSnapshot(hash, timestamp);
     }
 }
