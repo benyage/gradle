@@ -23,6 +23,8 @@ import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.UncheckedIOException;
 import org.gradle.api.invocation.Gradle;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
 import org.gradle.api.tasks.Delete;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.internal.logging.ConsoleRenderer;
@@ -35,6 +37,8 @@ import java.io.File;
 import java.io.IOException;
 
 public abstract class IdePlugin implements Plugin<Project> {
+    private static final Logger LOGGER = Logging.getLogger(IdePlugin.class);
+
     private TaskProvider<Task> lifecycleTask;
     private TaskProvider<Delete> cleanTask;
     protected Project project;
@@ -98,16 +102,8 @@ public abstract class IdePlugin implements Plugin<Project> {
         return String.format("clean%s", StringUtils.capitalize(taskName));
     }
 
-    public void addWorker(Task worker) {
-        addWorker(project.getTasks().named(worker.getName()), worker.getName());
-    }
-
     public void addWorker(TaskProvider<? extends Task> worker, String workerName) {
         addWorker(worker, workerName, true);
-    }
-
-    public void addWorker(Task worker, boolean includeInClean) {
-        addWorker(project.getTasks().named(worker.getName()), worker.getName(), includeInClean);
     }
 
     public void addWorker(final TaskProvider<? extends Task> worker, String workerName, boolean includeInClean) {
@@ -115,7 +111,7 @@ public abstract class IdePlugin implements Plugin<Project> {
         final TaskProvider<Delete> cleanWorker = project.getTasks().createLater(cleanName(workerName), Delete.class, new Action<Delete>() {
             @Override
             public void execute(Delete cleanWorker) {
-                cleanWorker.delete(worker.get().getOutputs().getFiles());
+                cleanWorker.delete(worker);
             }
         });
 
@@ -161,7 +157,7 @@ public abstract class IdePlugin implements Plugin<Project> {
                 lifecycleTask.doLast(new Action<Task>() {
                     @Override
                     public void execute(Task task) {
-                        System.out.println(String.format("Generated %s at %s", workspace.getDisplayName(), new ConsoleRenderer().asClickableFileUrl(workspace.getLocation().get().getAsFile())));
+                        LOGGER.lifecycle(String.format("Generated %s at %s", workspace.getDisplayName(), new ConsoleRenderer().asClickableFileUrl(workspace.getLocation().get().getAsFile())));
                     }
                 });
             }
